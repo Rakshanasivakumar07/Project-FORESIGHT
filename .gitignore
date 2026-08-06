@@ -1,0 +1,7 @@
+.venv/
+.venv-1/
+.venv-2/
+*.pkl
+__pycache__/
+cleaned_online_retail.csv
+online_retail_II.xlsx
