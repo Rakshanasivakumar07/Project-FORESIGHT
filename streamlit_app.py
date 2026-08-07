@@ -430,6 +430,28 @@ with col_b:
     fig_countries.update_layout(plot_bgcolor="white", paper_bgcolor="white", title_font_size=16)
     st.plotly_chart(fig_countries, use_container_width=True)
 
+# --- World Map: Revenue by Country ---
+st.markdown("#### 🗺️ Revenue by Country - World Map")
+country_map_df = (
+    filtered_df.groupby("Country", as_index=False)["Revenue"].sum()
+)
+fig_map = px.choropleth(
+    country_map_df,
+    locations="Country",
+    locationmode="country names",
+    color="Revenue",
+    hover_name="Country",
+    color_continuous_scale="Blues",
+    title="🌍 Global Revenue Distribution",
+)
+fig_map.update_layout(
+    geo=dict(showframe=False, showcoastlines=True, bgcolor="rgba(0,0,0,0)"),
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    title_font_size=18,
+)
+st.plotly_chart(fig_map, use_container_width=True)
+
 col_c, col_d = st.columns(2)
 
 with col_c:
