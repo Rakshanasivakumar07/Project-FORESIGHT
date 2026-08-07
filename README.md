@@ -2,6 +2,8 @@
 
 Project Foresight is a sales forecasting system built on the **Online Retail II** dataset (UK-based online retailer, 2009–2011). It predicts future sales trends using time-series modeling and serves results through an interactive **Streamlit dashboard**.
 
+🔗 **Live Demo**: [project-foresight-2fxuxshztunay9y9krovtc.streamlit.app](https://project-foresight-2fxuxshztunay9y9krovtc.streamlit.app/)
+
 ## Overview
 
 - **Dataset**: Online Retail II (transactional e-commerce data, Dec 2009 – Dec 2011, 739 days)
