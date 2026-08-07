@@ -131,6 +131,14 @@ st.markdown(
             font-weight: 700;
             font-size: 0.8rem;
         }
+        .risk-badge-watch {
+            background-color: #ece1fb;
+            color: #5b21b6;
+            padding: 3px 10px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
 
         /* Footer */
         .footer {
@@ -277,8 +285,9 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### ⚙️ Inventory Risk Rules")
 st.sidebar.markdown(
     """
-    - 🔴 **Quantity < 5** → Stockout Risk → *Reorder Now*
-    - 🟡 **Quantity > 100** → Overstock Risk → *Markdown / Reduce Purchase*
+    - 🟣 **High demand volatility** → Watch (Volatile) → *Monitor Closely*
+    - 🔴 **Quantity < 5** (stable demand) → Stockout Risk → *Reorder Now*
+    - 🟡 **Quantity > 100** (stable demand) → Overstock Risk → *Markdown / Reduce Purchase*
     - 🟢 **Otherwise** → Healthy → *Monitor*
     """
 )
@@ -559,11 +568,26 @@ else:
 st.markdown('<div class="section-header">🧠 Inventory Intelligence</div>', unsafe_allow_html=True)
 
 
-def classify_risk(qty):
-    """Apply business rules to classify inventory risk."""
+def classify_risk(qty, volatility):
+    """
+    4-quadrant inventory risk classification, combining stock level
+    (quantity sold) with demand volatility (coefficient of variation
+    of daily quantity for that SKU).
+
+    Quadrants:
+      - Reorder Now      : low quantity, stable demand      -> stockout risk
+      - Markdown / Clear : high quantity, stable demand      -> overstock risk
+      - Watch (Volatile)  : demand swings unpredictably       -> monitor closely
+      - Healthy           : normal quantity, stable demand
+    """
     if pd.isna(qty):
         return "Unknown", "Review Data"
-    if qty < 5:
+
+    is_volatile = pd.notna(volatility) and volatility > 0.75
+
+    if is_volatile:
+        return "Watch (Volatile)", "Monitor Closely / Delay Large Orders"
+    elif qty < 5:
         return "Stockout Risk", "Reorder Now"
     elif qty > 100:
         return "Overstock Risk", "Markdown / Reduce Purchase"
@@ -577,8 +601,25 @@ inventory_df = (
     .agg(Total_Quantity=("Quantity", "sum"), Total_Revenue=("Revenue", "sum"))
 )
 
-inventory_df[["Risk Status", "Recommended Action"]] = inventory_df["Total_Quantity"].apply(
-    lambda q: pd.Series(classify_risk(q))
+# --- Demand volatility per SKU: coefficient of variation (std / mean) of
+#     daily quantity. Higher value = more unpredictable demand pattern.
+daily_qty = (
+    filtered_df.dropna(subset=["InvoiceDate"])
+    .groupby(["StockCode", filtered_df["InvoiceDate"].dt.date])["Quantity"]
+    .sum()
+    .reset_index()
+)
+volatility_df = (
+    daily_qty.groupby("StockCode")["Quantity"]
+    .agg(_mean="mean", _std="std")
+    .reset_index()
+)
+volatility_df["Volatility"] = (volatility_df["_std"] / volatility_df["_mean"].replace(0, float("nan"))).round(2)
+
+inventory_df = inventory_df.merge(volatility_df[["StockCode", "Volatility"]], on="StockCode", how="left")
+
+inventory_df[["Risk Status", "Recommended Action"]] = inventory_df.apply(
+    lambda row: pd.Series(classify_risk(row["Total_Quantity"], row["Volatility"])), axis=1
 )
 
 
@@ -586,6 +627,7 @@ def badge_html(status):
     mapping = {
         "Stockout Risk": "risk-badge-stockout",
         "Overstock Risk": "risk-badge-overstock",
+        "Watch (Volatile)": "risk-badge-watch",
         "Healthy": "risk-badge-healthy",
     }
     css_class = mapping.get(status, "risk-badge-healthy")
@@ -593,12 +635,52 @@ def badge_html(status):
 
 
 st.markdown("#### 📋 Inventory Risk Table")
-display_inventory = inventory_df.copy()
-display_inventory["Risk Status"] = display_inventory["Risk Status"].apply(badge_html)
-st.write(
-    display_inventory.rename(columns={"Total_Quantity": "Total Quantity", "Total_Revenue": "Total Revenue (₹)"})
-    .to_html(escape=False, index=False),
-    unsafe_allow_html=True,
+
+risk_filter_options = ["High Risk (Reorder + Markdown + Watch)"] + sorted(
+    inventory_df["Risk Status"].dropna().unique().tolist()
+) + ["All Products"]
+
+risk_view = st.selectbox(
+    "Show:", options=risk_filter_options, index=0,
+    help="Narrow the table down to the products that need attention.",
+)
+
+table_df = inventory_df.copy()
+if risk_view == "High Risk (Reorder + Markdown + Watch)":
+    table_df = table_df[table_df["Risk Status"] != "Healthy"]
+elif risk_view != "All Products":
+    table_df = table_df[table_df["Risk Status"] == risk_view]
+
+table_df = table_df.sort_values("Total_Revenue", ascending=False).rename(
+    columns={
+        "StockCode": "SKU",
+        "Description": "Product",
+        "Total_Quantity": "Total Quantity",
+        "Total_Revenue": "Total Revenue (₹)",
+        "Volatility": "Volatility (CV)",
+    }
+)
+
+st.caption(f"Showing {len(table_df):,} of {len(inventory_df):,} products")
+
+
+def highlight_risk(row):
+    colors = {
+        "Stockout Risk": "background-color: #ffe1e1",
+        "Overstock Risk": "background-color: #fff2d6",
+        "Watch (Volatile)": "background-color: #ece1fb",
+        "Healthy": "background-color: #dcf7e3",
+    }
+    style = colors.get(row["Risk Status"], "")
+    return [style] * len(row)
+
+
+st.dataframe(
+    table_df.style.apply(highlight_risk, axis=1).format(
+        {"Total Revenue (₹)": "₹{:,.0f}", "Total Quantity": "{:,.0f}", "Volatility (CV)": "{:.2f}"}
+    ),
+    use_container_width=True,
+    height=420,
 )
 
 col_e, col_f = st.columns([1, 1])
@@ -610,6 +692,7 @@ with col_e:
     color_map = {
         "Stockout Risk": "#c93b3b",
         "Overstock Risk": "#e0a400",
+        "Watch (Volatile)": "#7c3aed",
         "Healthy": "#2f9e5c",
         "Unknown": "#9aa5b1",
     }
@@ -642,6 +725,7 @@ st.markdown('<div class="section-header">💼 Business Impact</div>', unsafe_all
 potential_revenue = inventory_df["Total_Revenue"].sum()
 stockout_count = int((inventory_df["Risk Status"] == "Stockout Risk").sum())
 overstock_count = int((inventory_df["Risk Status"] == "Overstock Risk").sum())
+watch_count = int((inventory_df["Risk Status"] == "Watch (Volatile)").sum())
 healthy_count = int((inventory_df["Risk Status"] == "Healthy").sum())
 estimated_inventory_value = (
     filtered_df.assign(_val=filtered_df["Quantity"].fillna(0) * filtered_df["Price"].fillna(0))["_val"].sum()
@@ -666,7 +750,7 @@ for col, label, value in business_kpis:
             unsafe_allow_html=True,
         )
 
-b5, b6 = st.columns(2)
+b5, b6, b7 = st.columns(3)
 with b5:
     st.markdown(
         f"""
@@ -683,6 +767,16 @@ with b6:
         <div class="kpi-card">
             <h4>📈 Overstock Risk Count</h4>
             <h2>{overstock_count:,}</h2>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with b7:
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <h4>🟣 Watch (Volatile) Count</h4>
+            <h2>{watch_count:,}</h2>
         </div>
         """,
         unsafe_allow_html=True,
