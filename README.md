@@ -9,6 +9,15 @@ Project Foresight is a sales forecasting system built on the **Online Retail II*
 - **Approach**: Compare a seasonal-naive baseline against a Linear Regression model (trend + weekly seasonality features)
 - **Delivery**: Results are served via a Streamlit web app for interactive exploration
 
+## Features
+
+- 📊 KPI dashboard (revenue, orders, customers, products, average order value)
+- 📈 Monthly revenue trend, top products, top countries, top customers
+- 🗺️ Interactive world map — revenue by country (choropleth)
+- 🔮 Demand forecast section with actual vs predicted comparison
+- 🧠 Inventory risk classification (Stockout Risk / Overstock Risk / Healthy) with recommended actions
+- 🔍 Sidebar filters — country, product, date range
+
 ## Model Performance
 
 Backtested on the last 30 days of the dataset.
